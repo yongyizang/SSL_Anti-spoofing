@@ -66,6 +66,7 @@ class Dataset_ASVspoof2019_train(Dataset):
             self.args=args
             self.cut=64600 # take ~4 sec audio (64600 samples)
 
+
 	def __len__(self):
            return len(self.list_IDs)
 
@@ -74,7 +75,10 @@ class Dataset_ASVspoof2019_train(Dataset):
             
             utt_id = self.list_IDs[index]
             X,fs = librosa.load(self.base_dir+'flac/'+utt_id+'.flac', sr=16000) 
-            Y=process_Rawboost_feature(X,fs,self.args,self.algo)
+            if self.args.rawboost_on:
+                Y=process_Rawboost_feature(X,fs,self.args,self.algo)
+            else:
+                Y=X
             X_pad= pad(Y,self.cut)
             x_inp= Tensor(X_pad)
             target = self.labels[utt_id]

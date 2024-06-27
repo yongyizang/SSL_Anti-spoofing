@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch import Tensor
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 import yaml
 from data_utils_SSL import genSpoof_list,Dataset_ASVspoof2019_train,Dataset_ASVspoof2021_eval
@@ -24,7 +25,7 @@ def evaluate_accuracy(dev_loader, model, device):
     model.eval()
     weight = torch.FloatTensor([0.1, 0.9]).to(device)
     criterion = nn.CrossEntropyLoss(weight=weight)
-    for batch_x, batch_y in dev_loader:
+    for batch_x, batch_y in tqdm(dev_loader, desc='Validation'):
         
         batch_size = batch_x.size(0)
         num_total += batch_size
@@ -81,7 +82,7 @@ def train_epoch(train_loader, model, lr,optim, device):
     weight = torch.FloatTensor([0.1, 0.9]).to(device)
     criterion = nn.CrossEntropyLoss(weight=weight)
     
-    for batch_x, batch_y in train_loader:
+    for batch_x, batch_y in tqdm(train_loader, desc='Training'):
        
         batch_size = batch_x.size(0)
         num_total += batch_size
@@ -105,7 +106,7 @@ def train_epoch(train_loader, model, lr,optim, device):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ASVspoof2021 baseline system')
     # Dataset
-    parser.add_argument('--database_path', type=str, default='/your/path/to/data/ASVspoof_database/LA/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 LA eval data folders are in the same database_path directory.')
+    parser.add_argument('--database_path', type=str, default='/root/SSL_database/LA/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 LA eval data folders are in the same database_path directory.')
     '''
     % database_path/
     %   |- LA
@@ -117,7 +118,7 @@ if __name__ == '__main__':
  
     '''
 
-    parser.add_argument('--protocols_path', type=str, default='database/', help='Change with path to user\'s LA database protocols directory address')
+    parser.add_argument('--protocols_path', type=str, default='/root/SSL_database/', help='Change with path to user\'s LA database protocols directory address')
     '''
     % protocols_path/
     %   |- ASVspoof_LA_cm_protocols
@@ -132,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=100)
     parser.add_argument('--lr', type=float, default=0.000001)
     parser.add_argument('--weight_decay', type=float, default=0.0001)
-    parser.add_argument('--loss', type=str, default='weighted_CCE')
+    parser.add_argument('--loss', type=str, default='WCE')
     # model
     parser.add_argument('--seed', type=int, default=1234, 
                         help='random seed (default: 1234)')
@@ -157,6 +158,12 @@ if __name__ == '__main__':
     parser.add_argument('--cudnn-benchmark-toggle', action='store_true', \
                         default=False, 
                         help='use cudnn-benchmark? (default false)') 
+    
+    parser.add_argument('--perturb_amount', type=float, default=1.0,
+                        help='perturbation amount for phase spectrogram')
+    
+    parser.add_argument('--rawboost_on', action='store_true', default=False,
+                        help='use rawboost? (default false)')
 
 
     ##===================================================Rawboost data augmentation ======================================================================#
@@ -205,10 +212,12 @@ if __name__ == '__main__':
     
     ##===================================================Rawboost data augmentation ======================================================================#
     
-
-    if not os.path.exists('models'):
-        os.mkdir('models')
+    # output dir
+    parser.add_argument('--output_dir', type=str, default='output', help='output directory')
+    
     args = parser.parse_args()
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
  
     #make experiment reproducible
     set_random_seed(args.seed, args)
@@ -223,11 +232,11 @@ if __name__ == '__main__':
     prefix_2021 = 'ASVspoof2021.{}'.format(track)
     
     #define model saving path
-    model_tag = 'model_{}_{}_{}_{}_{}'.format(
-        track, args.loss, args.num_epochs, args.batch_size, args.lr)
+    model_tag = 'model_{}_PP={}pi_RB={}'.format(
+        track, str(args.perturb_amount*2), args.rawboost_on)
     if args.comment:
         model_tag = model_tag + '_{}'.format(args.comment)
-    model_save_path = os.path.join('models', model_tag)
+    model_save_path = os.path.join(args.output_dir, model_tag)
 
     #set model save directory
     if not os.path.exists(model_save_path):
@@ -268,7 +277,7 @@ if __name__ == '__main__':
     
     train_set=Dataset_ASVspoof2019_train(args,list_IDs = file_train,labels = d_label_trn,base_dir = os.path.join(args.database_path+'{}_{}_train/'.format(prefix_2019.split('.')[0],args.track)),algo=args.algo)
     
-    train_loader = DataLoader(train_set, batch_size=args.batch_size,num_workers=8, shuffle=True,drop_last = True)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size,num_workers=12, shuffle=True,drop_last = True)
     
     del train_set,d_label_trn
     
@@ -282,7 +291,7 @@ if __name__ == '__main__':
     dev_set = Dataset_ASVspoof2019_train(args,list_IDs = file_dev,
 		labels = d_label_dev,
 		base_dir = os.path.join(args.database_path+'{}_{}_dev/'.format(prefix_2019.split('.')[0],args.track)),algo=args.algo)
-    dev_loader = DataLoader(dev_set, batch_size=args.batch_size,num_workers=8, shuffle=False)
+    dev_loader = DataLoader(dev_set, batch_size=args.batch_size,num_workers=12, shuffle=False)
     del dev_set,d_label_dev
 
     
@@ -290,7 +299,7 @@ if __name__ == '__main__':
 
     # Training and validation 
     num_epochs = args.num_epochs
-    writer = SummaryWriter('logs/{}'.format(model_tag))
+    writer = SummaryWriter(model_save_path)
     
     for epoch in range(num_epochs):
         

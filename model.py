@@ -6,8 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import argparse
 import fairseq
-
+from perturber import Perturber
 
 ___author__ = "Hemlata Tak"
 __email__ = "tak@eurecom.fr"
@@ -21,10 +22,12 @@ class SSLModel(nn.Module):
     def __init__(self,device):
         super(SSLModel, self).__init__()
         
-        cp_path = 'xlsr2_300m.pt'   # Change the pre-trained XLSR model path. 
-        model, cfg, task = fairseq.checkpoint_utils.load_model_ensemble_and_task([cp_path])
+        task_arg = argparse.Namespace(task='audio_pretraining')
+        task = fairseq.tasks.setup_task(task_arg)
+        # https://dl.fbaipublicfiles.com/fairseq/wav2vec/xlsr2_300m.pt
+        model, _, _ = fairseq.checkpoint_utils.load_model_ensemble_and_task(['/root/SSL_Anti-spoofing/xlsr2_300m.pt'], task=task)
         self.model = model[0]
-        self.device=device
+        self.device = device
         self.out_dim = 1024
         return
 
@@ -439,6 +442,18 @@ class Model(nn.Module):
         gat_dims = [64, 32]
         pool_ratios = [0.5, 0.5, 0.5, 0.5]
         temperatures =  [2.0, 2.0, 100.0, 100.0]
+        
+        self.perturber = Perturber(window_size=1024,
+                            hop_size=256,
+                            perturb_setting={
+                                    'perturb_magnitude_per_row': False,
+                                    'perturb_magnitude_per_column': False,
+                                    'perturb_phase_per_row': True,
+                                    'perturb_phase_per_column': True,
+                                    'magnitude_perturb_amount': 0,
+                                    'phase_perturb_amount': args.perturb_amount
+                            },
+                            device=device)
 
 
         ####
@@ -504,6 +519,7 @@ class Model(nn.Module):
         self.out_layer = nn.Linear(5 * gat_dims[1], 2)
 
     def forward(self, x):
+        x = self.perturber(x)
         #-------pre-trained Wav2vec model fine tunning ------------------------##
         x_ssl_feat = self.ssl_model.extract_feat(x.squeeze(-1))
         x = self.LL(x_ssl_feat) #(bs,frame_number,feat_out_dim)
