@@ -42,7 +42,7 @@ def evaluate_accuracy(dev_loader, model, device):
 
 
 def produce_evaluation_file(dataset, model, device, save_path):
-    data_loader = DataLoader(dataset, batch_size=10, shuffle=False, drop_last=False)
+    data_loader = DataLoader(dataset, batch_size=20, shuffle=False, drop_last=False, num_workers=12)
     num_correct = 0.0
     num_total = 0.0
     model.eval()
@@ -51,7 +51,7 @@ def produce_evaluation_file(dataset, model, device, save_path):
     key_list = []
     score_list = []
     
-    for batch_x,utt_id in data_loader:
+    for batch_x,utt_id in tqdm(data_loader):
         fname_list = []
         score_list = []  
         batch_size = batch_x.size(0)

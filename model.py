@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch import Tensor
 import argparse
 import fairseq
-from perturber import Perturber
+from perturber import Perturber, MultiResolutionPhasePerturber
 
 ___author__ = "Hemlata Tak"
 __email__ = "tak@eurecom.fr"
@@ -443,15 +443,24 @@ class Model(nn.Module):
         pool_ratios = [0.5, 0.5, 0.5, 0.5]
         temperatures =  [2.0, 2.0, 100.0, 100.0]
         
-        self.perturber = Perturber(window_size=1024,
-                            hop_size=256,
+        # self.perturber = Perturber(window_size=1024,
+        #                     hop_size=256,
+        #                     perturb_setting={
+        #                             'perturb_magnitude_per_row': False,
+        #                             'perturb_magnitude_per_column': False,
+        #                             'perturb_phase_per_row': True,
+        #                             'perturb_phase_per_column': True,
+        #                             'magnitude_perturb_amount': 0,
+        #                             'phase_perturb_amount': args.perturb_amount
+        #                     },
+        #                     device=device)
+        
+        self.perturber = MultiResolutionPhasePerturber(
+                            window_sizes=[1024, 512, 256],
+                            hop_sizes=[256, 128, 64],
                             perturb_setting={
-                                    'perturb_magnitude_per_row': False,
-                                    'perturb_magnitude_per_column': False,
                                     'perturb_phase_per_row': True,
                                     'perturb_phase_per_column': True,
-                                    'magnitude_perturb_amount': 0,
-                                    'phase_perturb_amount': args.perturb_amount
                             },
                             device=device)
 

@@ -7,6 +7,7 @@ from torch import nn
 from torch import Tensor
 from torch.utils.data import DataLoader
 import yaml
+from tqdm import tqdm
 from data_utils_SSL import genSpoof_list,Dataset_ASVspoof2019_train,Dataset_ASVspoof2021_eval
 from model import Model
 from tensorboardX import SummaryWriter
@@ -41,7 +42,7 @@ def evaluate_accuracy(dev_loader, model, device):
 
 
 def produce_evaluation_file(dataset, model, device, save_path):
-    data_loader = DataLoader(dataset, batch_size=14, shuffle=False, drop_last=False)
+    data_loader = DataLoader(dataset, batch_size=20, shuffle=False, drop_last=False, num_workers=12)
     num_correct = 0.0
     num_total = 0.0
     model.eval()
@@ -50,7 +51,7 @@ def produce_evaluation_file(dataset, model, device, save_path):
     key_list = []
     score_list = []
     
-    for batch_x,utt_id in data_loader:
+    for batch_x,utt_id in tqdm(data_loader):
         fname_list = []
         score_list = []  
         batch_size = batch_x.size(0)
@@ -105,7 +106,7 @@ def train_epoch(train_loader, model, lr,optim, device):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ASVspoof2021 baseline system')
     # Dataset
-    parser.add_argument('--database_path', type=str, default='/your/path/to/data/ASVspoof_database/DF/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 DF for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 DF eval data folders are in the same database_path directory.') 
+    parser.add_argument('--database_path', type=str, default='/root/SSL_database/LA/', help='Change this to user\'s full directory address of LA database (ASVspoof2019- for training & development (used as validation), ASVspoof2021 DF for evaluation scores). We assume that all three ASVspoof 2019 LA train, LA dev and ASVspoof2021 DF eval data folders are in the same database_path directory.') 
     '''
     % database_path/
     %   |- DF
@@ -114,7 +115,7 @@ if __name__ == '__main__':
     %      |- ASVspoof2019_LA_dev/flac
     '''
 
-    parser.add_argument('--protocols_path', type=str, default='database/', help='Change with path to user\'s DF database protocols directory address')
+    parser.add_argument('--protocols_path', type=str, default='/root/SSL_database/', help='Change with path to user\'s DF database protocols directory address')
     '''
     % protocols_path/
     %   |- ASVspoof_LA_cm_protocols
@@ -203,6 +204,12 @@ if __name__ == '__main__':
     parser.add_argument('--SNRmax', type=int, default=40, 
                     help='Maximum SNR value for coloured additive noise.[defaul=40]')
     
+    parser.add_argument('--perturb_amount', type=float, default=1.0,
+                        help='perturbation amount for phase spectrogram')
+    
+    parser.add_argument('--rawboost_on', action='store_true', default=False,
+                        help='use rawboost? (default false)')
+    
     ##===================================================Rawboost data augmentation ======================================================================#
     
 
@@ -235,9 +242,9 @@ if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'                  
     print('Device: {}'.format(device))
     
-    model = Model(args,device)
+    model = Model(args,device).to(device)
     nb_params = sum([param.view(-1).size()[0] for param in model.parameters()])
-    model =nn.DataParallel(model).to(device)
+    # model =nn.DataParallel(model).to(device)
     print('nb_params:',nb_params)
 
     #set Adam optimizer

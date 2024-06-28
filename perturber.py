@@ -134,6 +134,105 @@ class Perturber(nn.Module):
 
         return perturbed_audio
     
+class PhasePerturber(nn.Module):
+    def __init__(self, window_size, hop_size, perturb_setting, device):
+        super(PhasePerturber, self).__init__()
+        self.window_size = window_size
+        self.hop_size = hop_size
+        self.perturb_setting = perturb_setting
+        self.device = torch.device(device)
+        
+        # Phase
+        self.perturb_phase_per_row = perturb_setting['perturb_phase_per_row']
+        self.perturb_phase_per_column = perturb_setting['perturb_phase_per_column']
+        self.perturb_phase = False
+        if self.perturb_phase_per_row or self.perturb_phase_per_column:
+            self.perturb_phase = True
+            
+        self.phase_perturb_dist = torch.distributions.Normal(0, 1)
+
+    def forward(self, audio_tensor):        
+        stft = torch.stft(
+            audio_tensor,
+            n_fft=self.window_size,
+            hop_length=self.hop_size,
+            window=torch.hann_window(self.window_size).to(self.device),
+            pad_mode='constant',
+            return_complex=True,
+        )
+        
+        magnitude = torch.abs(stft)
+        phase = torch.angle(stft)
+        phase_perturb_amount = self.phase_perturb_dist.sample(torch.Size([phase.shape[0]])).to(self.device)
+        
+        """
+        For phase, we perturb the phase spectrogram directly.
+        """
+
+        if self.perturb_phase:
+            perturb_noise = torch.randn(phase.shape, device=self.device) # [batch, time, freq]
+            # phase_perturb_amount is batch_size; perturb_noise is [batch, time, freq]; so we need to multiply them
+            perturb_noise = perturb_noise * phase_perturb_amount[:, None, None]
+            phase = phase + perturb_noise
+            
+        elif self.perturb_phase_per_row:
+            row_shape = phase.shape[0]
+            perturb_mask = torch.randn(row_shape, device=self.device)
+            perturb_mask = perturb_mask * phase_perturb_amount
+            perturb_noise = torch.tile(perturb_mask[:, None], (1, phase.shape[1]))
+            phase = phase + perturb_noise
+            
+        elif self.perturb_phase_per_column:
+            column_shape = phase.shape[1]
+            perturb_mask = torch.randn(column_shape, device=self.device)
+            perturb_mask = perturb_mask * phase_perturb_amount
+            perturb_noise = torch.tile(perturb_mask[None, :], (phase.shape[0], 1))
+            phase = phase + perturb_noise
+            
+        perturbed_stft = magnitude * torch.exp(1j * phase)
+
+        # Inverse STFT to obtain the perturbed audio
+        perturbed_audio = torch.istft(
+            perturbed_stft,
+            n_fft=self.window_size,
+            hop_length=self.hop_size,
+            window=torch.hann_window(self.window_size).to(self.device),
+            # pad_mode='constant',
+        )
+
+        return perturbed_audio
+    
+class MultiResolutionPhasePerturber(nn.Module):
+    def __init__(self, 
+                 window_sizes,
+                 hop_sizes,
+                 perturb_setting, 
+                 device):
+        super(MultiResolutionPhasePerturber, self).__init__()
+        self.window_sizes = window_sizes
+        self.hop_sizes = hop_sizes
+        assert len(window_sizes) == len(hop_sizes), "The number of window sizes and hop sizes should be the same"
+        self.perturb_setting = perturb_setting
+        self.device = torch.device(device)
+        
+        # Phase
+        self.perturb_phase_per_row = perturb_setting['perturb_phase_per_row']
+        self.perturb_phase_per_column = perturb_setting['perturb_phase_per_column']
+        self.perturb_phase = False
+        if self.perturb_phase_per_row or self.perturb_phase_per_column:
+            self.perturb_phase = True
+            
+        self.phase_perturbers = []
+        for i in range(len(window_sizes)):
+            self.phase_perturbers.append(PhasePerturber(window_sizes[i], hop_sizes[i], perturb_setting, device))
+        
+    def forward(self, audio_tensor):
+        for i in range(len(self.window_sizes)):
+            perturbed = self.phase_perturbers[i](audio_tensor)
+            audio_tensor[:, :perturbed.shape[1]] += perturbed
+        audio_tensor = audio_tensor / len(self.window_sizes)
+        return audio_tensor
+    
 if __name__ == "__main__":
     # Load an audio file
     audio, sr = librosa.load("test.wav", sr=None)
