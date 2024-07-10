@@ -149,9 +149,9 @@ class PhasePerturber(nn.Module):
         # Phase
         self.perturb_phase_per_row = perturb_setting['perturb_phase_per_row']
         self.perturb_phase_per_column = perturb_setting['perturb_phase_per_column']
-        self.perturb_phase = False
-        if self.perturb_phase_per_row or self.perturb_phase_per_column:
-            self.perturb_phase = True
+        # self.perturb_phase = False
+        # if self.perturb_phase_per_row or self.perturb_phase_per_column:
+        #     self.perturb_phase = True
             
         self.phase_perturb_dist = torch.distributions.Normal(0, 1)
 
@@ -170,7 +170,7 @@ class PhasePerturber(nn.Module):
         phase = torch.angle(stft)
         phase_perturb_amount = self.phase_perturb_dist.sample(torch.Size([phase.shape[0]])).to(self.device)
         
-        if self.perturb_phase:
+        if self.perturb_phase_per_row and self.perturb_phase_per_column:
             perturb_noise = torch.randn(phase.shape, device=self.device)
             perturb_noise = perturb_noise * phase_perturb_amount[:, None, None]
             phase = phase + perturb_noise
