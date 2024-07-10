@@ -133,7 +133,11 @@ class Perturber(nn.Module):
         )
 
         return perturbed_audio
-    
+
+import torch
+import torch.nn as nn
+import math
+
 class PhasePerturber(nn.Module):
     def __init__(self, window_size, hop_size, perturb_setting, device):
         super(PhasePerturber, self).__init__()
@@ -151,27 +155,23 @@ class PhasePerturber(nn.Module):
             
         self.phase_perturb_dist = torch.distributions.Normal(0, 1)
 
-    def forward(self, audio_tensor):        
+    def forward(self, audio_tensor):
+        original_length = audio_tensor.shape[-1]
+
         stft = torch.stft(
             audio_tensor,
             n_fft=self.window_size,
             hop_length=self.hop_size,
             window=torch.hann_window(self.window_size).to(self.device),
-            pad_mode='constant',
-            return_complex=True,
+            return_complex=True
         )
         
         magnitude = torch.abs(stft)
         phase = torch.angle(stft)
         phase_perturb_amount = self.phase_perturb_dist.sample(torch.Size([phase.shape[0]])).to(self.device)
         
-        """
-        For phase, we perturb the phase spectrogram directly.
-        """
-
         if self.perturb_phase:
-            perturb_noise = torch.randn(phase.shape, device=self.device) # [batch, time, freq]
-            # phase_perturb_amount is batch_size; perturb_noise is [batch, time, freq]; so we need to multiply them
+            perturb_noise = torch.randn(phase.shape, device=self.device)
             perturb_noise = perturb_noise * phase_perturb_amount[:, None, None]
             phase = phase + perturb_noise
             
@@ -179,14 +179,14 @@ class PhasePerturber(nn.Module):
             row_shape = phase.shape[0]
             perturb_mask = torch.randn(row_shape, device=self.device)
             perturb_mask = perturb_mask * phase_perturb_amount
-            perturb_noise = torch.tile(perturb_mask[:, None], (1, phase.shape[1]))
+            perturb_noise = torch.tile(perturb_mask[:, None, None], (1, phase.shape[1], phase.shape[2]))
             phase = phase + perturb_noise
             
         elif self.perturb_phase_per_column:
             column_shape = phase.shape[1]
             perturb_mask = torch.randn(column_shape, device=self.device)
             perturb_mask = perturb_mask * phase_perturb_amount
-            perturb_noise = torch.tile(perturb_mask[None, :], (phase.shape[0], 1))
+            perturb_noise = torch.tile(perturb_mask[None, :, None], (phase.shape[0], 1, phase.shape[2]))
             phase = phase + perturb_noise
             
         perturbed_stft = magnitude * torch.exp(1j * phase)
@@ -197,11 +197,11 @@ class PhasePerturber(nn.Module):
             n_fft=self.window_size,
             hop_length=self.hop_size,
             window=torch.hann_window(self.window_size).to(self.device),
-            # pad_mode='constant',
+            length=original_length
         )
 
         return perturbed_audio
-    
+        
 class MultiResolutionPhasePerturber(nn.Module):
     def __init__(self, 
                  window_sizes,

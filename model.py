@@ -459,8 +459,8 @@ class Model(nn.Module):
                             window_sizes=[1024, 512, 256],
                             hop_sizes=[256, 128, 64],
                             perturb_setting={
-                                    'perturb_phase_per_row': True,
-                                    'perturb_phase_per_column': True,
+                                    'perturb_phase_per_row': args.phase_perturb_row,
+                                    'perturb_phase_per_column': args.phase_perturb_col,
                             },
                             device=device)
 
