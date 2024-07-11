@@ -176,17 +176,19 @@ class PhasePerturber(nn.Module):
             phase = phase + perturb_noise
             
         elif self.perturb_phase_per_row:
-            row_shape = phase.shape[0]
+            row_shape = torch.Size([phase.shape[0], phase.shape[1]])
             perturb_mask = torch.randn(row_shape, device=self.device)
+            phase_perturb_amount = torch.tile(phase_perturb_amount[:, None], (1, phase.shape[1]))
             perturb_mask = perturb_mask * phase_perturb_amount
-            perturb_noise = torch.tile(perturb_mask[:, None, None], (1, phase.shape[1], phase.shape[2]))
+            perturb_noise = torch.tile(perturb_mask[:, :, None], (1, 1, phase.shape[2]))
             phase = phase + perturb_noise
             
         elif self.perturb_phase_per_column:
-            column_shape = phase.shape[1]
+            column_shape = torch.Size([phase.shape[0], phase.shape[2]])
             perturb_mask = torch.randn(column_shape, device=self.device)
+            phase_perturb_amount = torch.tile(phase_perturb_amount[:, None], (1, phase.shape[2]))
             perturb_mask = perturb_mask * phase_perturb_amount
-            perturb_noise = torch.tile(perturb_mask[None, :, None], (phase.shape[0], 1, phase.shape[2]))
+            perturb_noise = torch.tile(perturb_mask[:, None, :], (1, phase.shape[1], 1))
             phase = phase + perturb_noise
             
         perturbed_stft = magnitude * torch.exp(1j * phase)

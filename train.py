@@ -190,12 +190,13 @@ def parse_arguments():
     parser.add_argument('--wandb_entity', type=str, default="airlab")
     return parser.parse_args()
 
-def evaluate_model(dev_loader, model, device):
+def evaluate_model(dev_loader, model, device, debug=False):
     model.eval()
     val_loss = 0.0
     num_total = 0.0
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 0.9]).to(device))
     
+    debug_i = 0
     target_scores, nontarget_scores = [], []
     with torch.no_grad():
         for batch_x, batch_y in tqdm(dev_loader, desc='Validation'):
@@ -209,17 +210,21 @@ def evaluate_model(dev_loader, model, device):
             
             target_scores.extend(batch_out[batch_y == 1, 1].data.cpu().numpy().ravel())
             nontarget_scores.extend(batch_out[batch_y == 0, 1].data.cpu().numpy().ravel())
+            
+            debug_i += 1
+            if debug and debug_i == 20:
+                break
     
     eer, _ = compute_eer(target_scores, nontarget_scores)
     
     return val_loss / num_total, eer
 
-def train_epoch(train_loader, model, optimizer, device):
+def train_epoch(train_loader, model, optimizer, device, debug=False):
     model.train()
     running_loss = 0
     num_total = 0.0
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 0.9]).to(device))
-    
+    debug_i = 0
     target_scores, nontarget_scores = [], []
     for batch_x, batch_y in tqdm(train_loader, desc='Training'):
         batch_size = batch_x.size(0)
@@ -237,6 +242,10 @@ def train_epoch(train_loader, model, optimizer, device):
         
         target_scores.extend(batch_out[batch_y == 1, 1].data.cpu().numpy().ravel())
         nontarget_scores.extend(batch_out[batch_y == 0, 1].data.cpu().numpy().ravel())
+        
+        debug_i += 1
+        if debug and debug_i == 20:
+            break
     
     eer, _ = compute_eer(target_scores, nontarget_scores)
     
@@ -267,9 +276,9 @@ def main():
     
     # Data loaders
     train_set, dev_set, eval_set = prepare_datasets(args)
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers=12, shuffle=True, drop_last=True)
-    dev_loader = DataLoader(dev_set, batch_size=args.batch_size, num_workers=12, shuffle=False)
-    eval_loader = DataLoader(eval_set, batch_size=args.batch_size, num_workers=12, shuffle=False)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, num_workers=6, shuffle=True, drop_last=True)
+    dev_loader = DataLoader(dev_set, batch_size=args.batch_size, num_workers=6, shuffle=False)
+    eval_loader = DataLoader(eval_set, batch_size=args.batch_size, num_workers=6, shuffle=False)
     
     print(f'Training samples: {len(train_set)}, Validation samples: {len(dev_set)}, Evaluation samples: {len(eval_set)}')
     
@@ -280,18 +289,16 @@ def main():
     if args.debug:
         print("Running in debug mode: 1 epoch, 20 steps")
         num_epochs = 1
-        debug_train_loader = list(train_loader)[:20]  # Limit to 20 steps
-        debug_val_loader = list(dev_loader)[:20]  # Limit to 20 steps
-        debug_test_loader = list(eval_loader)[:20]  # Limit to 20 steps
     else:
         num_epochs = args.num_epochs
-        debug_train_loader = train_loader
-        debug_val_loader = dev_loader
-        debug_test_loader = eval_loader
+        
+    debug_train_loader = train_loader
+    debug_val_loader = dev_loader
+    debug_test_loader = eval_loader
     
     for epoch in range(num_epochs):
-        train_loss, train_eer = train_epoch(debug_train_loader, model, optimizer, device)
-        val_loss, val_eer = evaluate_model(debug_val_loader, model, device)
+        train_loss, train_eer = train_epoch(debug_train_loader, model, optimizer, device, debug=args.debug)
+        val_loss, val_eer = evaluate_model(debug_val_loader, model, device, debug=args.debug)
         
         if not args.debug:
             wandb.log({
